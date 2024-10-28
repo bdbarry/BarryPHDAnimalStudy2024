@@ -1,0 +1,71 @@
+---
+title: "Analysis of morphine behavioural data"
+author: "Ben Barry"
+date: "2024-10-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#load libraries
+```{r load libraries}
+library(tidyverse)
+```
+
+#load data
+```{r}
+rawMorphineData <- read_csv("data/raw_morphine_data.csv")
+
+animalInfo <- read_csv("data/animals.csv")
+```
+
+# rename ID column
+```{r}
+#colnames for raw morphine data are strange becuase of the CSV. 
+# I will rename the first to ID. 
+rawMorphineData =rename(rawMorphineData, ID = ...1)
+
+```
+
+#write a row of stats function.
+```{r}
+row_of_stats = function(row, timepoint) {
+  mean_val <- mean(row)
+  sd_val <- sd(row)
+  n_val <- sum(!is.na(row))
+  return(c(mean = mean_val, sd = sd_val, n = n_val, timepoint = timepoint))
+}
+```
+#finding the means of the data.
+```{r}
+# make a table for each of the timepoints
+# this is a little messy and but 
+
+baselineStats = apply(rawMorphineData[, 2:4], 1, row_of_stats, timepoint = 0)
+
+stats30 <- apply(rawMorphineData[, 5:7], 1, row_of_stats, timepoint = 30)
+
+stats60 <- apply(rawMorphineData[, 8:10], 1, row_of_stats, timepoint = 60)
+
+rawStats <- t(cbind(baseline_stats, stats_30 , stats_60 ))
+
+```
+
+# editing the ainmalInfo Table
+```{r}
+animalInfo <- animalInfo %>%
+  rename(treatment = Saline,
+         genotype = phenotype,
+         sex = Sex) %>%
+replace_na(list(treatment = "morphine")) %>%
+  mutate(treatment = if_else(treatment == "x", "saline", treatment)) %>%
+  select(ID, sex, genotype, treatment)
+
+morphineData <- cbind(animalInfo, rawStats)
+```
+
+```{r}
+
+```

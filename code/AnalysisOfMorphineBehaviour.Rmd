@@ -11,9 +11,15 @@ knitr::opts_chunk$set(echo = TRUE)
 
 #load libraries
 ```{r load libraries}
-library(tidyverse)
+library(tidyverse) #data wrangling plotting ect.. 
 library(here)
-library(wesanderson) 
+library(wesanderson)  #colour pallets
+library(gt) #formating tables
+library(lme4)
+library(emmeans) # posthoc for lMM
+library(sjPlot)
+library(car)
+library(xtable)
 ```
 
 ```{r}
@@ -82,31 +88,38 @@ morphineData <- cbind(animalInfo, rawStats)
 #plotting raw data
 ```{r ploting raw data}
 ## morphine  dot plot 
-ggplot(morphineData,
+morphine_dot_plot <- ggplot(morphineData,
        aes(x = factor(timepoint),
            y = mean,
-           colour = interaction(sex, genotype))) +
-  geom_point(position = position_jitter(width = 0.2, height = 0)) +
+           fill = interaction(sex, genotype))) +
+  geom_point(position = position_jitter(width = 0.1, height = 0),
+             size = 3, 
+             shape = 21,
+             colour = "black") +
   stat_summary(fun = mean, geom = "line",
-               aes(group = interaction(sex, genotype))) +
-  labs(x = "Timepoint", y = "withdrawal latency (s)", colour = "Group") +
+              aes(group = interaction(sex, genotype),
+                  colour = interaction(sex, genotype)),
+                  show.legend = FALSE) +
+  labs(x = "Timepoint",
+       y = "withdrawal latency (s)",
+       fill = "Group") +
   theme_classic() +
-  scale_colour_manual(values = pal,
+  scale_fill_manual(values = pal,
                       labels = c("f.WT" = "WT female",
                                  "f.A20" = "I325N female",
                                  "m.WT" = "WT male",
                                  "m.A20" = "I325N male")) +
+  scale_colour_manual(values = pal) +
   facet_grid(~ treatment)
 
+morphine_dot_plot #show plot
 
 #bar plots comparing treatments
-ggplot(subset(morphineData, sex == "m"), 
+male_morphine_genotype_interaction <- ggplot(subset(morphineData, sex == "m"), 
        aes(x = factor(timepoint),
            y = mean,
            fill = treatment)) +
-  geom_bar(stat = "summary",
-           position = position_dodge(),
-           colour = "black") +
+  geom_boxplot(colour = "black") +
   facet_grid(~ genotype) +
   scale_fill_manual(values = c("#3B9AB2", "#E1AF00")) + 
   theme_classic()  +
@@ -114,18 +127,19 @@ ggplot(subset(morphineData, sex == "m"),
               shape = 21,
               position = position_jitterdodge(dodge.width = 0.9,
                                               jitter.width = 0.1,)) +
-  labs(title = "Male morphine effect",
+  labs(title = "Male genotype interaction",
        x = "timepoint",
-       y = "withdrawal latency (s)")
+       y = "withdrawal latency (s)") +
+  ylim(c(0, 20))
+
+male_morphine_genotype_interaction #show plot
 
 #barlpot of female results
-ggplot(subset(morphineData, sex == "f"), 
+female_morphine_genotype_interaction <- ggplot(subset(morphineData, sex == "f"), 
        aes(x = factor(timepoint),
            y = mean,
            fill = treatment)) +
-  geom_bar(stat = "summary",
-           position = position_dodge(),
-           colour = "black") +
+  geom_boxplot(colour = "black") +
   facet_grid(~ genotype) +
   scale_fill_manual(values = c("#3B9AB2", "#E1AF00")) + 
   theme_classic()  +
@@ -133,10 +147,17 @@ ggplot(subset(morphineData, sex == "f"),
               shape = 21,
               position = position_jitterdodge(dodge.width = 0.9,
                                               jitter.width = 0.1,)) +
-  labs(title = "female morphine effect",
+  labs(title = "Female genotype interaction",
        x = "timepoint",
-       y = "withdrawal latency (s)")
+       y = "withdrawal latency (s)") +
+  ylim(c(0, 20))
+female_morphine_genotype_interaction #show plot
 
+ggsave("female_morphine_genotype_interaction.png", female_morphine_genotype_interaction, width = 6, height = 4, path = "../figures")
+
+ggsave("male_morphine_genotype_interaction.png", male_morphine_genotype_interaction, width = 6, height = 4, path = "../figures")
+
+ggsave("morphine_dot_plot.png", morphine_dot_plot, width = 6, height = 4, path = "../figures")
 ```
 #calculating MPE 
 ```{r calculating mpe}
@@ -189,7 +210,7 @@ ggplot(subset(morphineMPEdata, sex == "f"),
 
 #comparing morphine mpe by timepoint. 
 ```{r plotting mpe}
-ggplot(subset(morphineMPEdata, treatment == "morphine"), 
+MPE_30min <- ggplot(subset(morphineMPEdata, treatment == "morphine"), 
        aes(x = interaction(treatment, genotype),
            y = mpe30,
            fill = interaction(treatment, genotype))) +
@@ -211,10 +232,11 @@ ggplot(subset(morphineMPEdata, treatment == "morphine"),
                                               jitter.width = 0.1,)) +
   labs(title = "maximum potential effect of morphine at 30m",
        x = "genotype",
-       y = "MPE")
+       y = "MPE")+
+  ylim(c(0, 100))
+MPE_30min 
 
-
-ggplot(subset(morphineMPEdata, treatment == "morphine"), 
+MPE_60min <- ggplot(subset(morphineMPEdata, treatment == "morphine"), 
        aes(x = interaction(treatment, genotype),
            y = mpe60,
            fill = interaction(treatment, genotype))) +
@@ -236,32 +258,55 @@ ggplot(subset(morphineMPEdata, treatment == "morphine"),
                                               jitter.width = 0.1,)) +
   labs(title = "maximum potential effect of morphine at 60m",
        x = "genotype",
-       y = "MPE")
+       y = "MPE") +
+  ylim(c(0, 100))
+MPE_60min 
 
+
+
+
+
+
+
+ggsave("MPE_30min.png", MPE_30min, width = 6, height = 4, path = "../figures")
+ggsave("MPE_60min.png", MPE_60min, width = 6, height = 4, path = "../figures")
 
 ```
 
 
 ```{r long format of MPE data}
-morphineMPEdata %>%
+morphineMPE <- morphineMPEdata %>%
   select(- c(`0`, `30`, `60`)) %>%
   filter(treatment == "morphine") %>%
   pivot_longer(cols = 5:6,
                names_to = "timepoint",
                values_to = "mpe") %>%
-  ggplot(aes(x = factor(timepoint), y = mpe, group = ID)) +
-  geom_line() + 
-  geom_point(size = 2, aes(colour = interaction(sex, genotype))) +
-  labs(x = "Time Point", y = "Maximum Percentage Effect (MPE)") +
-  theme_minimal() +
-  scale_colour_manual(values = pal,
-                      labels = c("f.WT" = "WT female",
+  mutate(timepoint = str_extract(timepoint, "(30|60)")) %>%
+  ggplot(aes(factor(timepoint),
+             mpe,
+             fill = interaction (sex, genotype)
+             )) +
+  geom_point(position = position_jitter(width = 0.1, height = 0),
+             size = 3, 
+             shape = 21,
+             colour = "black") +
+  stat_summary(fun = mean, geom = "line",
+              aes(group = interaction(sex, genotype),
+                  colour = interaction(sex, genotype)),
+                  show.legend = FALSE) + 
+  theme_classic() +
+  scale_fill_manual(values = pal,
+                    labels = c("f.WT" = "WT female",
                                  "f.A20" = "I325N female",
                                  "m.WT" = "WT male",
-                                 "m.A20" = "I325N male"))
+                                 "m.A20" = "I325N male")) +
+  scale_colour_manual(values = pal) + 
+  labs(x = "Timepoint",
+       y = "maximum potential effect of morphine",
+       fill = "Group")
 
-
-
+morphineMPE
+ggsave("morphineMPE.png", morphineMPE, width = 6, height = 4, path = "../figures")
 
 
 ```
@@ -351,6 +396,150 @@ summary(mpe60AOV)
 
 #since there is a significant interaction perform posthoc
 TukeyHSD(mpe60AOV)
+```
+
+#linear mixed effects on the delta
+```{r finding the delta between timpoint and treatment}
+
+morphineDelta <- morphineData %>%
+  group_by(ID, timepoint, sex, genotype) %>%
+  summarise(delta = 
+    mean[treatment=="morphine"] - mean[treatment == "saline"]) %>%
+  ungroup()
+
+morphineDeltaBoxplot <- morphineDelta %>%
+  ggplot(aes(
+    x = interaction(sex, genotype),
+    y = delta,
+    fill = interaction(sex, genotype)
+  )) + 
+  geom_boxplot() + 
+  facet_grid(~ timepoint) +
+  scale_fill_manual(values = pal,
+                    labels = c("f.WT" = "WT female",
+                                 "f.A20" = "I325N female",
+                                 "m.WT" = "WT male",
+                                 "m.A20" = "I325N male")) + 
+  theme_classic()  +
+  geom_jitter(aes(y= delta),
+              shape = 21,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0.1)) +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()
+        ) + 
+  labs(x = "Group by time",
+       y = "Withdrawal latency normalised to saline (s)",
+       fill = "Group")
+morphineDeltaBoxplot
+
+
+morphineDelta_dotplot <- morphineDelta %>%
+  ggplot(aes(factor(timepoint),
+             delta,
+             fill = interaction (sex, genotype)
+             )) +
+  geom_point(position = position_jitter(width = 0.1, height = 0),
+             size = 3, 
+             shape = 21,
+             colour = "black") +
+  stat_summary(fun = mean, geom = "line",
+              aes(group = interaction(sex, genotype),
+                  colour = interaction(sex, genotype)),
+                  show.legend = FALSE) + 
+  theme_classic() +
+  scale_fill_manual(values = pal,
+                    labels = c("f.WT" = "WT female",
+                                 "f.A20" = "I325N female",
+                                 "m.WT" = "WT male",
+                                 "m.A20" = "I325N male")) +
+  scale_colour_manual(values = pal) + 
+  labs(x = "Timepoint",
+       y = "Withdrawal latency normalised to saline (s)",
+       fill = "Group")
+morphineDelta_dotplot  
+
+ggsave("morphineDelta_dotplot.png", morphineDelta_dotplot, width = 6, height = 4, path = "../figures")
+  
+
+#model for the analysis of varience.
+deltaAOV <- aov(delta ~ sex * genotype * factor(timepoint), data = morphineDelta)
+shapiro.test(deltaAOV$residuals)
+summary(deltaAOV)
+
+#linear mixed effects modelling. 
+delta_mixed_effect1<- lmer(sqrt(delta + 1) ~ factor(timepoint) * sex * genotype + (1|ID), data = morphineDelta)
+plot(delta_mixed_effect1)
+hist(resid(delta_mixed_effect1))
+summary(delta_mixed_effect1)
+Anova(delta_mixed_effect1)
+emmeans(delta_mixed_effect1, pairwise ~ sex*genotype|timepoint)
 
 
 ```
+
+
+#linear mixed effects on all data
+```{r linear mixed effect of data}
+
+morphineLMEfourWay <- lmer(log(mean) ~  factor(timepoint) * genotype * sex * treatment + (1|ID), data = morphineData)
+
+morphineLMEthreeWay <- lmer(log(mean) ~  (factor(timepoint) + genotype + sex + treatment)^3 + (1|ID), data = morphineData)
+                            
+                            
+summary(morphineLMEfourWay)
+plot(morphineLMEfourWay)
+hist(resid(morphineLMEfourWay))
+qqnorm(resid(morphineLMEfourWay))
+qqline(resid(morphineLMEfourWay))
+Anova(morphineLMEfourWay)
+hist(log(morphineData$mean))
+
+tab_model(morphineLMEthreeWay)
+morphineLMEemmeans <- emmeans(morphineLMEfourWay, pairwise ~ sex * genotype|treatment * (factor(timepoint)))
+print(morphineLMEemmeans)
+
+#plot the model on the data
+predictMorphineLME <- predict(morphineLME)
+
+predictMorphineLME_model <- morphineData %>%
+  na.omit() %>%
+  cbind(predictMorphineLME) %>%
+  mutate(timepoint = factor(timepoint))
+
+ggplot(predictMorphineLME_model, aes(x = factor(timepoint),
+                         y = mean,
+                         colour = interaction(genotype, sex))) + 
+  geom_point() +
+  geom_line(aes(y = predictMorphineLME, 
+                group = interaction(genotype, sex))) +
+  facet_grid(~treatment)
+
+plot(factor(morphineData$genotype), morphineData$mean)
+
+```
+
+
+```{r}
+#separating morphine and saline responses
+morphineData_latencysep <- morphineData %>%
+  rename(mean_latency = mean) %>%
+  group_by(ID, sex, genotype, timepoint) %>%
+  mutate(morphine_latency = mean_latency[treatment== "morphine"],
+         saline_latency = mean_latency[treatment == "saline"]) %>%
+  ungroup()
+
+salineCoVmorphine <- lmer(log(morphine_latency) ~  genotype * sex * factor(timepoint) + (1|ID) + log(saline_latency), data = morphineData_latencysep)
+
+summary(salineCoVmorphine) 
+plot(salineCoVmorphine)
+Anova(salineCoVmorphine)
+qqnorm(resid(salineCoVmorphine))
+qqline(resid(salineCoVmorphine))
+
+
+
+emmeans(salineCoVmorphine, pairwise ~ sex * genotype | factor(timepoint))
+
+```
+

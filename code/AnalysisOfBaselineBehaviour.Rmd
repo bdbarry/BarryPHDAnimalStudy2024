@@ -1,0 +1,228 @@
+---
+title: "AnalysisOfBaselineBehaviour"
+author: "Ben Barry"
+date: "2024-11-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load libraries, echo = FALSE}
+library(tidyverse)
+library(wesanderson) 
+library(ggpubr)
+```
+
+```{r import data}
+vonFreyBaseline <- read_csv("./data/vonFrey_baseline.csv")
+
+hargravesBaseline <- read_csv("./data/baseline_hargraves.csv")
+
+baseline_weights <- read.csv("./data/baseline_weights.csv")
+
+cull_report <- read.csv("./data/cull_report.csv")
+```
+
+
+
+
+```{r}
+## generate a colour pallet for plotting 
+pal <- wes_palette("Zissou1", 4, type = "discrete")
+pal_cont <- wes_palette("Zissou1", 21,  type = "continuous")
+
+```
+
+
+```{r adding means to harvreaves data}
+
+hargravesBaselineMeans <- hargravesBaseline %>%
+  rowwise() %>%
+  mutate(mean = mean(c(n1, n2, n3)),
+         SD = sd(c(n1, n2, n3)),
+         n = length(c(n1, n2, n3))
+         ) %>%
+  select(-c(n1, n2, n3, ID))
+```
+
+```{r plotting Von frey Baseline}
+baselineVFplot <- vonFreyBaseline %>%
+  mutate(sex = str_replace_all(sex,c("M" = "Male", "F" = "Female")),
+         genotype = str_replace(genotype, "A20", "I325N")
+         ) %>%
+  ggplot(aes(
+    x = interaction(sex, genotype, sep = " "),
+    y = threshold,
+    fill = interaction(sex, genotype))
+    ) +
+  geom_boxplot() + 
+  geom_jitter(aes(y= threshold),
+              shape = 21,   
+              size = 3,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0.1,)
+              ) +
+  scale_fill_manual(values = pal,
+                    guide = "none") +
+  labs(x = "Group",
+       y = "50% threshold (g)",
+       title = "Baseline mechanical threshold") +
+  theme_classic() + 
+  ylim(0, 5)
+  
+baselineVFaov <- aov(threshold ~ sex * genotype, data = vonFreyBaseline)
+shapiro.test(baselineVFaov$residuals)
+summary(baselineVFaov)
+
+ggsave("baselineVFplot.png", baselineVFplot, width = 6, height = 4, path = "./figures")
+```
+
+```{r hargraves baseline plot}
+baselineHargravesPlot <- hargravesBaselineMeans %>%
+  mutate(sex = str_replace_all(sex,c("M" = "Male", "F" = "Female")),
+         genotype = str_replace(genotype, "A20", "I325N")
+         ) %>%
+  ggplot(aes(
+    x = interaction(sex, genotype, sep = " "),
+    y = mean,
+    fill = interaction(sex, genotype))
+    ) +
+  geom_boxplot(colour = "black") + 
+  geom_jitter(aes(y= mean),
+              shape = 21,   
+              size = 3,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0.1,)
+              ) +
+  scale_fill_manual(values = pal,
+                    guide = "none") +
+  labs(x = "Group",
+       y = "mean withdrawal latency",
+       title = "Baseline thermal threshold") +
+  theme_classic() + 
+  ylim(0, 10)
+
+baselineHargravesPlot
+
+baselineHargravesAov <- aov(mean ~ sex * genotype, data = hargravesBaselineMeans)
+shapiro.test(baselineHargravesAov$residuals)
+summary(baselineHargravesAov)
+TukeyHSD(baselineHargravesAov)
+
+ggsave("baselineHargravesPlot.png", baselineHargravesPlot, width = 6, height = 4, path = "./figures")
+```
+
+#plotting baseline weight. 
+
+```{r}
+baseline_weights <-   baseline_weights %>%
+  mutate(sex = str_replace_all(sex,c("M" = "Male", "F" = "Female")),
+         genotype = str_replace(genotype, "A20", "I325N")) %>%
+  na.omit()
+
+
+
+baselineWeightPlot <- baseline_weights %>%
+  ggplot(aes(
+    genotype,
+    weight,
+  fill = genotype)
+    ) +
+  geom_boxplot() + 
+  geom_jitter(aes(y= weight),
+              shape = 21,   
+              size = 3,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0.1,)
+              ) +
+  scale_fill_manual(values = c("#3B9AB2", "#E1AF00"),
+                    guide = "none") +
+  labs(x = "Genotype",
+       y = "weight(g)",
+       title = "") +
+  ylim(c(0, 50)) +
+  theme_classic() +
+  facet_grid(~ sex)
+baselineWeightPlot 
+ggsave("baselineWeightPlot.png", baselineWeightPlot , width = 6, height = 4, path = "./figures")
+
+weight_AOV <- aov(weight ~ sex * genotype, data = baseline_weights)
+plot(weight_AOV$residuals)
+hist(weight_AOV$residuals)
+shapiro.test(weight_AOV$residuals)
+summary(weight_AOV)
+weight_Tukey <- TukeyHSD(weight_AOV)
+
+baselineWeightPlot +
+  stat_pvalue_manual(weight_Tukey, label = "p.adj")
+  
+
+```
+
+#plotting cell counts and viability
+```{r}
+
+cull_report <- cull_report %>%
+  rename("ViableCount" = "Total.viable.Cell.Count..10.6.") %>%
+  select(ID, genotype, sex, method, DOD, ViableCount, Viability) %>%
+  na.omit()
+
+cellCountPlot <- cull_report %>%
+  mutate(sex = str_replace_all(sex,c("M" = "Male", "F" = "Female")),
+         genotype = str_replace(genotype, "A20", "I325N")) %>%
+  ggplot(aes(
+    genotype,
+    ViableCount,
+  fill = genotype)
+    ) +
+  geom_boxplot() + 
+  geom_jitter(aes(y= ViableCount),
+              shape = 21,   
+              size = 3,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0)
+              ) +
+  scale_fill_manual(values = c("#3B9AB2", "#E1AF00"),
+                    guide = "none") +
+  labs(x = "Genotype",
+       y = " number of cells (x10^6)",
+       title = "") +
+  theme_classic() +
+  facet_grid(~ sex)
+cellCountPlot
+ggsave("cellCountPlot.png", cellCountPlot , width = 6, height = 4, path = "./figures")
+
+
+cellViabilityPlot <- cull_report %>%
+  mutate(sex = str_replace_all(sex,c("M" = "Male", "F" = "Female")),
+         genotype = str_replace(genotype, "A20", "I325N")) %>%
+  ggplot(aes(
+    genotype,
+    Viability,
+  fill = genotype)
+    ) +
+  geom_boxplot() + 
+  geom_jitter(aes(y= Viability),
+              shape = 21,   
+              size = 3,
+              position = position_jitterdodge(dodge.width = 0.9,
+                                              jitter.width = 0)
+              ) +
+  scale_fill_manual(values = c("#3B9AB2", "#E1AF00"),
+                    guide = "none") +
+  labs(x = "Genotype",
+       y = " number of cells (x10^6)",
+       title = "") +
+  theme_classic() +
+  facet_grid(~ sex)
+cellViabilityPlot
+
+
+
+cellCountAOV <- aov(ViableCount ~ genotype * sex, data = cull_report)
+summary(cellCountAOV)
+shapiro.test(cellCountAOV$residuals)
+TukeyHSD(cellCountAOV)
+```
